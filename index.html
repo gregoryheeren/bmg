@@ -1,0 +1,387 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+
+<link href='http://fonts.googleapis.com/css?family=Mouse+Memoirs' rel='stylesheet' type='text/css'>
+
+<style>
+	body {
+		background: black;
+	}
+	
+	a {
+		color: white;
+	}
+	
+	h1 {
+		font-family: 'Mouse Memoirs', sans-serif;
+		color: white;
+	}
+
+	.btn {
+		stroke: black;
+		stroke-width: 1;
+		fill: white;
+		fill-opacity: 0;
+	}
+	
+	#svg {
+		border: 10px solid white;
+		background: #472809;
+	}
+	
+	.endmsg {
+		fill: white;
+		font-size: 20px;
+	}
+	
+	#gametitle {
+		background-color: white;
+	}
+	
+</style>
+
+<script>
+
+var tilesize = 80;
+var w = tilesize*10;
+var h = tilesize*7;
+var board;
+
+function launch(game, mode) {
+	// hide launcher
+	document.getElementById("launcher").style.display = 'none';
+	// show the game
+	document.getElementById("game").style.display = 'block';
+	// load the game
+	load(game, mode);
+}
+
+// mode:
+// - collab = both need to get out
+// - battle = first out is winner
+function load(game, mode) {
+
+	board = new Board(8,8,80,mode);
+	board.loadFromString(game);
+
+	// create playground
+	document.getElementById("svg").setAttribute("width",board.cols*board.tilesize);
+	document.getElementById("svg").setAttribute("height",board.rows*board.tilesize);
+	
+	//add listeners
+	document.getElementById("svg").addEventListener('click',function() {clickSvg();},false);
+	
+}
+
+function k() {
+	//console.log(event.keyCode);
+	switch (event.keyCode) {
+		case 38: // p1 up
+			board.player1.move(0,-1); //moveUp();
+			break;
+		case 40: // p1 down
+			board.player1.move(0,+1); //moveDown();
+			break;
+		case 39: // p1 right
+			board.player1.move(+1,0); //moveRight();
+			break;
+		case 37: // p1 left
+			board.player1.move(-1,0); //moveLeft();
+			break;
+		case 90: // p2 up = z
+		case 104: // 8
+			board.player2.move(0,-1); //moveUp();
+			break;
+		case 83: // p2 down = s
+		case 88: // p2 down = x
+		case 98: // 2
+			board.player2.move(0,+1); //moveDown();
+			break;
+		case 68: // p2 right = d
+		case 102: // 6
+			board.player2.move(+1,0); //moveRight();
+			break;
+		case 81: // p2 left = q
+		case 100: // 4
+			board.player2.move(-1,0); //moveLeft();
+			break;
+		default:
+			console.log("unhandled key",event.keyCode);
+			break;
+	}
+}
+
+function moveLeft() { move(-1,0); }
+function moveRight() { move(+1,0); }
+function moveUp() { move(0,-1); }
+function moveDown() { move(0,+1); }
+function clickSvg() {
+	
+	//console.log("clicked");
+	
+	// where did he click
+	var x = event.clientX;
+	var y = event.clientY;
+	// grab player
+	var pl1 = document.getElementById('player1');
+	//console.log(pl1);
+	var pl1x = parseFloat(pl1.getAttribute("x")) + (tilesize/2);
+	var pl1y = parseFloat(pl1.getAttribute("y")) + (tilesize/2);	
+	
+	var deltax = x - pl1x;
+	var deltay = y - pl1y;
+	
+	//console.log("clicksvg", [x,y],[pl1x,pl1y],[deltax,deltay]);
+	
+	
+	if (Math.abs(deltax) < tilesize/2 && Math.abs(deltay) < tilesize/2) { console.debug("clicked too close"); return; } // too close to know for sure
+	if (Math.abs(deltax) > Math.abs(deltay)) { // horizontal movement
+		if (deltax < 0) { moveLeft(); } else { moveRight(); }
+	} else { // vertical movement
+		if (deltay < 0) { moveUp(); } else { moveDown(); }
+	}
+	
+}
+
+function move(deltacol,deltarow) {
+	//console.debug("moving by",deltacol,deltarow);
+	board.player1.move(deltacol,deltarow);
+}
+
+// the parent class for boxes, exits, etc
+Tile = function (board, col, row) { this.board = board; this.row = row; this.col = col; }
+Tile.prototype.DOM;
+Tile.prototype = {
+	getDom: function() {
+		if (this.dom == null) {
+			this.dom = document.createElementNS("http://www.w3.org/2000/svg",'image');
+			this.dom.setAttributeNS("http://www.w3.org/1999/xlink","href",this.imgUrl);
+			this.dom.setAttribute("class","box");
+		}
+		return this.dom;
+	},
+	// repositions the box graphically at its coordinates
+	update: function(){
+		this.getDom().setAttribute("x",this.col*this.board.tilesize);
+		this.getDom().setAttribute("y",this.row*this.board.tilesize);
+	},
+	// moves the given amount of rows/cols (typically +1 or -1)
+	move: function(coldelta,rowdelta) {
+		// you can only move if the tile that you are moving to allows it
+		//console.log("in Tile.move",coldelta,rowdelta);
+		if (this.canMove(coldelta,rowdelta)) {
+			//console.debug("2",this.col,this.row);
+			var newcol = this.col + coldelta;
+			var newrow = this.row + rowdelta;
+			this.board.tiles[this.col][this.row] = null;
+			this.board.tiles[newcol][newrow] = this;
+			this.col = newcol;
+			this.row = newrow;
+			this.update(); // redraw
+			return true;
+		}
+		return false;
+	},
+	remove: function() {
+		var svg = document.getElementById("svg");
+		svg.removeChild(this.DOM);
+		this.board.tiles[this.col][this.row] = null;
+		this.col = -1;
+		this.row = -1;
+		
+	},
+	// returns true if this kind of tile can move to a certain location
+	// returns false if it can't (a box cannot move to the tile of a box for instance)
+	canMove: function(deltacol,deltarow) {
+		//console.debug("in Tile.canMove",this.col,this.row);
+		var newcol = this.col + deltacol;
+		var newrow = this.row + deltarow;
+		// nothing can move outside of the board
+		//console.debug("moving",this,"to",newcol,newrow,board.cols,board.rows);
+		if (newcol < 0 || newcol >= board.cols || newrow < 0 || newrow >= board.rows) {
+			console.debug("Cannot move ", this, "outside of the game");
+			return false;
+		}
+		return true;
+		// override to input logic
+	}
+}
+
+// a moveable box
+Box.prototype = new Tile();
+Box.prototype.constructor = Tile;
+Box.prototype.imgUrl = "box.png";
+function Box(board, col, row) { Tile.call(this, board, col, row); }
+Box.prototype.canMove = function(deltacol,deltarow) {
+	if (Tile.prototype.canMove.call(this,deltacol,deltarow) == false) { return false;}
+	if (this.board.whatsAt(this.col+deltacol,this.row+deltarow) != null) {
+		console.log("Cannot move a box to a location where there's something else");
+		return false;
+	} // a box cannot be pushed onto anything
+	return true;
+}
+
+// an unmoveable rock
+Rock.prototype = new Tile();
+Rock.prototype.constructor = Tile;
+Rock.prototype.imgUrl = "Rock.png";
+function Rock(board, col, row) { Tile.call(this, board, col, row); }
+Rock.prototype.canMove = function(deltacol,deltarow) {
+	return false; // can never move
+}
+
+// the player
+Player.prototype = new Tile;
+Player.prototype.constructor = Tile;
+Player.prototype.imgUrl = "boy.png";
+Player.prototype.name = "Player";
+Player.prototype.isInGame = true;
+function Player(board, col, row, name, imgurl) {
+	Tile.call(this, board, col, row);
+	this.name = name;
+	this.imgUrl = imgurl;
+}
+Player.prototype.canMove = function(deltacol,deltarow) {
+	//console.debug("in Player.canMove",this.col,this.row);
+	if (Tile.prototype.canMove.call(this,deltacol,deltarow) == false) { return false;}
+	var what = this.board.whatsAt(this.col+deltacol,this.row+deltarow);
+	if (what == null) { // nothing there, go
+		return true;
+	} else if (Exit.prototype.isPrototypeOf(what)) { // you've hit the exit!
+		console.log(this, "found the exit!");
+		this.board.gotout(this);
+		return true; // move into the exit
+	} else { // something there, you can't go
+		console.log("There is something where you want to go", what);
+	}
+	return what.move(deltacol,deltarow);
+}
+
+// the exit
+Exit.prototype = new Tile;
+Exit.prototype.constructor = Tile;
+Exit.prototype.imgUrl = "Chest Closed.png";
+function Exit(board, col, row) { Tile.call(this, board, col, row); }
+Exit.prototype.canMove = function(deltacol,deltarow) { return false; } // the exit cannot move
+
+// the playing board
+//Board.prototype.mode = "battle";
+Board = function (cols, rows, tilesize, mode) {
+	this.cols = cols;
+	this.rows = rows;
+	this.tilesize = tilesize;
+	this.mode = mode;
+	this.tiles = new Array(cols);
+	for (var i = 0; i<cols;i++) { this.tiles[i] = new Array(rows); }
+
+	// configure the DOM elements
+	document.getElementById("svg").width = this.cols*this.tilesize;
+	document.getElementById("svg").height = this.rows*this.tilesize;
+	
+}
+
+Board.prototype.lastGameString = "";
+
+Board.prototype = {
+
+	addTile: function(tile) {
+		// add the tile to the array
+		this.tiles[tile.col][tile.row] = tile;
+		// draw the tile on the board
+		var dom = tile.getDom();
+		dom.setAttribute("height",this.tilesize);
+		dom.setAttribute("width",this.tilesize);
+		//console.log(dom);
+		document.getElementById("svg").appendChild(dom);
+		tile.DOM = dom; // assign the created SVG DOM object back to our javascript object
+		tile.update();
+		return tile;
+	},
+	
+	// loads the tiles from a string containing
+	// characters to represent each tile
+	loadFromString: function(str) {
+		this.lastGameString = str;
+		var col = 0;
+		var row = 0;
+		for (var i = 0; i<str.length;i++) {
+			if (str[i] == "X") { this.addTile(new Box(this, col,row)); }
+			if (str[i] == "R") { this.addTile(new Rock(this, col,row)); }
+			if (str[i] == "1") { this.player1 = this.addTile(new Player(this,col,row, "Player1", "boy.png")); }
+			if (str[i] == "2") { this.player2 = this.addTile(new Player(this,col,row, "Player2", "girl.png")); }
+			if (str[i] == "E") { this.exit = this.addTile(new Exit(this, col,row)); }
+			col++;
+			if (col == this.cols) { col = 0; row++; }
+		}
+	},
+	
+	// returns the object at col & row
+	whatsAt: function(col,row) {
+		return this.tiles[col][row];
+	},
+	
+	// a player found the exit
+	gotout: function(playerObj) {
+		if (this.mode == "battle" || this.mode == "single") { // first out wins
+			var winningtext = playerObj.name + " has won!";	
+			this.showendmsg(winningtext);
+		} else if (this.mode == "collab") { // both need to get out
+			// remove player from screen
+			playerObj.remove();
+			playerObj.isInGame = false;
+			// is there another player? is the other player still on the screen? 
+			if (typeof this.player2 == "undefined" || !this.player1.isInGame && !this.player2.isInGame) {
+				this.showendmsg("You escaped!");
+			}
+		}
+	},
+	
+	showendmsg: function(text) {
+		var svg = document.getElementById("svg");
+		while (svg.lastChild) { svg.removeChild(svg.lastChild); } // clear screen
+		
+		var dom = document.createElementNS("http://www.w3.org/2000/svg",'text');
+		dom.setAttribute("class","endmsg");
+		
+		var textNode = document.createTextNode(text);
+		dom.appendChild(textNode);
+		
+		dom.setAttribute("height",this.tilesize);
+		dom.setAttribute("x",this.tilesize*2);
+		dom.setAttribute("y",this.tilesize*2);
+		document.getElementById("svg").appendChild(dom);
+	
+	}
+
+}
+
+
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+</head>
+
+<body onkeydown="k()" onload="launch('1-X-X--XXX-XXX--X--X--RX-XXRX-X-X--R-X--X-RX-XX-E-X--R-RX-XX-X-2','collab');">
+
+<div id="launcher">
+
+<h1>Select a game</h1>
+
+
+
+<a href="javascript:launch('1X--XXXX-XXXXXXX-X-X---XXX--X-XX---XX---XXX-XXX---X---X-X-X-XXXE','single')">One player - #1</a><br/>
+<a href="javascript:launch('1-X-X--XXX-XXX--X--X--RX-XXRX-X-X--R-X--X-RX-XX-E-X--R-RX-XX-X-2','collab')">Two player - collab</a><br/>
+<a href="javascript:launch('1---E--2--------------------------------------------------------','collab')">Two player - collab - empty board</a><br/>
+	
+</div>
+
+<div id="game" style="display:none">
+	
+
+	<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" id="svg" />
+	
+</div>
+
+</body>
+
+</html>
